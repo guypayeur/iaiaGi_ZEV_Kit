@@ -1,0 +1,11 @@
+This is the D-ECU Subtree inside the iaiaGi project.
+
+The D-ECU is a complex system handling several key functionalities in the iaiaGi conversion architecture.
+It stands as a universal development platform to convert internal combustion engine vehicles into EVs.
+Acts as a key component for the integration with standard vehicle electronics at multiple levels:
+- Vehicle drive control over CAN BUS
+- Other subsystems integration for the centralized control (BMS, Controller) 
+- Interface twards the pre-existing electronic control units
+- Infotainment platform
+
+The complexity of this project requires its decomposition into specific project subtrees.
