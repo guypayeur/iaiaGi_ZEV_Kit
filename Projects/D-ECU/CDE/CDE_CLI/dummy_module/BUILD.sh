@@ -1,9 +1,9 @@
 #!/bin/bash
 
-# cde_cli package build script
+# cde dummy package build script
 
 VERSION_STRING="0.1-dev"
-PACKAGE_BASE_NAME="cde_cli"
+PACKAGE_BASE_NAME="cde_dummy"
 
 # Take the start location as the Collector root source dir
 SOURCE_DIR=`pwd`
@@ -21,13 +21,13 @@ fi
 cd $CDE_CLI_BUILDDIR
 rm -f $PACKAGE_NAME".zip"
 
-BASE_DIR="cde_cli"
+BASE_DIR="dummy"
 mkdir -p $BASE_DIR
 # Cleanup the existing, if any
 cd $BASE_DIR
 rm -rf bin
 rm -rf scpt
-rm -f LICENSE README module.info
+rm -f README module.info
 
 # Make the dirs
 mkdir bin
@@ -35,8 +35,8 @@ mkdir scpt
 
 # Copy the executables
 cd bin
-cp $SOURCE_DIR/cde_cli.py .
-cp $SOURCE_DIR/cde_cli_registry.py .
+cp $SOURCE_DIR/dummy.py .
+cp $SOURCE_DIR/dummyd.py .
 
 # Copy the script files
 cd ../scpt
@@ -46,7 +46,6 @@ cp $SOURCE_DIR/post_uninst.py .
 # Copy the base doc
 cd ..
 cp $SOURCE_DIR/README .
-cp $SOURCE_DIR/LICENSE .
 cp $SOURCE_DIR/module.info .
 
 # Make the compressed package

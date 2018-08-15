@@ -8,7 +8,7 @@ management of the CDE modules through the common cde-cli management framework.
 THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS AS IS AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. 
 IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE.
 """
-import os, sys, pwd, grp, stat, subprocess
+import os, sys, pwd, grp, stat, subprocess, shutil
 import zipfile
 import click
 
@@ -27,6 +27,22 @@ __CDE_CLI_DIR = __CDE_ROOT_DIR + '/cde_cli'
 __CDE_CLI_BIN_DIR = __CDE_CLI_DIR + '/bin'
 __CDE_CLI_SCPT_DIR = __CDE_CLI_DIR + '/scpt'
 
+"""
+ Makes a backup of the whole cde directory tree as a file
+ located in the CDE Root directory with this naming convention
+ cde-<version>-<yyyymmddhhmm>.zip
+"""
+def backup_cde_dir():    
+    oldv = __CDE_REGISTRY.mod_version('cde_cli')
+    bcktime = format(datetime.datetime.now(), '%Y%m%d%H%M')
+    back_zipfile='/opt/cde-' + oldv + '-bck-' + bcktime + '.zip'
+    try:
+        subprocess.call(['zip', '-r', back_zipfile, __CDE_ROOT_DIR])
+    except:
+        click.echo('CDE directory tree backup compression failed, exiting.')
+        click.ClickException(sys.exc_info[0])
+        sys.exit(1)
+
 @click.group()
 def cli():
     pass
@@ -41,11 +57,10 @@ def install(zfile):
         sys.exit(1)
         
     click.echo('CDE environment installation tool version ' + __version__)
-    # Creates the /opt/cde-cli-bck_<hhmmss-YYYYMMdd>.gz backup file, if the system already exists.
-    if os.path.isdir(__CDE_ROOT_DIR):
-        #A CDE dir already exists: ask if backup or exit
-        click.echo('The CDE Root directory is present.')
-        click.confirm('Backup the existing and replace?', abort=True)
+    # If the CDE environment already exists, exit with message
+    if os.path.isdir(__CDE_ROOT_DIR):        
+        click.echo('The CDE Root directory is present. Drop and backup before installing a new version.')
+        sys.exit(1)
     else:
         # Creates the root cde module directory /opt/d-ecu/.
         os.mkdir(__CDE_ROOT_DIR, 0750);
@@ -67,7 +82,7 @@ def install(zfile):
         
     # Installs the cde-cli as a CDE module from the .zip file
     # The package .zip file must be in the same dir of this script
-    click.echo('Installing the cde_cli module.')
+    click.echo('Installing the CDE environment.')
     try:
         subprocess.call(['unzip', zfile, '-d', __CDE_ROOT_DIR])
     except:
@@ -79,8 +94,8 @@ def install(zfile):
     sys.path.insert(0, __CDE_CLI_BIN_DIR)
     from cde_cli_registry import CDE_CLI_Registry
     reg = CDE_CLI_Registry()
-    moduleinfo = reg.load_moduleinfo(__CDE_CLI_DIR + '/module.info')
-    reg.store_moduleinfo(moduleinfo[0], moduleinfo[1])
+    moduleinfo = reg.read_moduleinfo(__CDE_CLI_DIR + '/module.info')
+    reg.store_infodata(moduleinfo[0], moduleinfo[1])
         
     # Assigns all the CDE Root dir to the cde user recursively
     cdeuid = pwd.getpwnam('cde')[2]
@@ -96,17 +111,35 @@ def install(zfile):
     click.echo('Executing post-installation tasks')
     subprocess.call(__CDE_CLI_SCPT_DIR+'/post_inst.py')    
     
-    click.echo('CDE CLI environment ready')
+    click.echo('CDE environment ready. Type cde_cli sto start the CLI.')
 
 
 @click.command()
 def drop():
-    click.echo('Drop')
+    """Drops a CDE dirtree by prior doing a file backup"""
+    
+    click.echo('The drop command will uninstall ALL installed CDE Modules.')
+    if click.confirm('Please confirm to proceed with the CDE drop operation:'):        
+        #Executes all the post_uninst.py scripts of the installed modules        
+        sys.path.insert(0, __CDE_CLI_BIN_DIR)
+        from cde_cli_registry import CDE_CLI_Registry
+        reg = CDE_CLI_Registry()
+        for mname in reg.get_modules():            
+            module_root_dir = __CDE_ROOT_DIR + '/' + mname
+            if os.path.isfile(module_root_dir + '/scpt/post_uninst.py'):                
+                subprocess.call(module_root_dir + '/scpt/post_uninst.py')        
+        #Makes the CDE dir backup
+        backup_cde_dir()
+        #Finally removes the CDE dir tree
+        try:
+            shutil.rmtree(__CDE_ROOT_DIR)
+        except:
+            click.echo('An error occurred when trying to remove the CDE directory '+ __CDE_ROOT_DIR)
+            click.echo('Please check and remove manually the directory')
     
 cli.add_command(install)
 cli.add_command(drop)    
     
 if __name__ == '__main__':
     cli()
-
 

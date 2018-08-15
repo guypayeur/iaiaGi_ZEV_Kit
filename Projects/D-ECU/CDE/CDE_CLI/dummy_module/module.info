@@ -1,0 +1,12 @@
+[main]
+name=dummy
+version=0.1
+
+[programs]
+dummy=dummy.py
+
+[daemons]
+dummyd=dummyd.py
+
+[dependencies]
+cde_cli=0.1
