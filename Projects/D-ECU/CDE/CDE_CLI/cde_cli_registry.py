@@ -36,7 +36,7 @@ __status__     =  "Development"
 CDE_ROOT_DIR = '/opt/d-ecu'
 CDE_EMPTY_PID = -1
 
-__CDE_REGISTRY_FILE = CDE_ROOT_DIR + '/.cdereg'    
+_CDE_REGISTRY_FILE = CDE_ROOT_DIR + '/.cdereg'    
 
 class CDE_CLI_Registry:    
 
@@ -49,10 +49,9 @@ class CDE_CLI_Registry:
         """
 
         self.program_list = []
-        if os.path.isfile(__CDE_REGISTRY_FILE):
+        if os.path.isfile(_CDE_REGISTRY_FILE):
             self._load_registry_file()
             self._make_program_list()
-            #TODO: self._check_pids()
         else:
             self.__reg_dict = {}
             self.dump_registry()
@@ -61,7 +60,7 @@ class CDE_CLI_Registry:
         """
         Loads a registry persistence JSON file into the registry structure                
         """
-        json_data=open(__CDE_REGISTRY_FILE).read()
+        json_data=open(_CDE_REGISTRY_FILE).read()
         self.__reg_dict = json.loads(json_data)
 
 
@@ -75,14 +74,14 @@ class CDE_CLI_Registry:
             infodata = self._get_infodata(mname)
             programs = infodata['programs']
             for pgm in programs:                
-                self.program_list.append(mname, pgm['name'], pgm['exec_cmd'], pgm['is_daemon'], pgm['pid'])
+                self.program_list.append((mname, pgm['name'], pgm['exec_cmd'], pgm['is_daemon'], pgm['pid']))
     
     
     def dump_registry(self):
         """
         Dumps the registry structure into the regitry persistency file               
         """
-        with open(__CDE_REGISTRY_FILE, 'w') as fp:
+        with open(_CDE_REGISTRY_FILE, 'w') as fp:
             json.dump(self.__reg_dict, fp)    
     
     
@@ -158,6 +157,9 @@ class CDE_CLI_Registry:
         Removes the registry data from the registry for a certain module
         """
         del self.__reg_dict[mname]
+        self.dump_registry()
+        self.program_list = []
+        self._make_program_list()
 
 
     def get_modules(self):
@@ -184,9 +186,9 @@ class CDE_CLI_Registry:
             return self.program_list
         else:
             res=[]
-            for mod, name, exe, is_daemon, pid in program_list:
+            for mod, name, exe, is_daemon, pid in self.program_list:
                 if mod == mname:
-                    res.append(mod, name, exe, is_daemon, pid)
+                    res.append((mod, name, exe, is_daemon, pid))
             return res
 
 
@@ -204,7 +206,7 @@ class CDE_CLI_Registry:
          Returns the full path of the exec file for a certain executable name
          or None if not found
         """
-        for mod, name, exe, is_daemon, pid in program_list:
+        for mod, name, exe, is_daemon, pid in self.program_list:
             if mod == mname and name == pname:
                 return CDE_ROOT_DIR + '/' + mname + '/bin/' + exe
         
@@ -242,7 +244,7 @@ class CDE_CLI_Registry:
          Clears the outdated PID of a daemon and syncs the registry
          with the persistency file. Then rebuilds the program list.
         """
-        self.store_pid(self, mname, pname, CDE_EMPTY_PID):
+        self.store_pid(mname, pname, CDE_EMPTY_PID)
                             
         
     def _compare_versions(self, firstv, secondv):
@@ -292,7 +294,7 @@ class CDE_CLI_Registry:
             av_vers = self.mod_version(depmodule)
             if av_vers == None:                
                 return False
-            if self._compare_versions(av_vers, depminvers) == -1                
+            if self._compare_versions(av_vers, depminvers) == -1:
                 return False
             
         return True

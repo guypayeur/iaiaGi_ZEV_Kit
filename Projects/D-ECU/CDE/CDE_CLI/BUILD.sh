@@ -53,6 +53,7 @@ cp $SOURCE_DIR/module.info .
 cd ..
 PACKAGE_NAME=$PACKAGE_BASE_NAME"-"$VERSION_STRING
 zip -r $PACKAGE_NAME".zip" $BASE_DIR
+cp $SOURCE_DIR/cde_cli_base.py "cde_cli_base-$VERSION_STRING.py" 
 
 cd $SOURCE_DIR
 echo "$PACKAGE_NAME package created."

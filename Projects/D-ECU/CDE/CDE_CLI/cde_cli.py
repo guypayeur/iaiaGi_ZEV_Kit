@@ -11,7 +11,7 @@ See: https://github.com/iaiaGi/iaiaGi_ZEV_Kit/blob/master/LICENSE.rtf
 THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS AS IS AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. 
 IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE.
 """
-import os, sys, pwd, grp, stat, shutil, datetime, time, signal
+import os, sys, pwd, grp, stat, subprocess, shutil, datetime, time, signal
 import click
 from click_repl import repl, register_repl, exit as repl_exit
 import psutil
@@ -48,11 +48,12 @@ def backup_module_dir(mname):
     oldv = __CDE_REGISTRY.mod_version(mname)
     bcktime = format(datetime.datetime.now(), '%Y%m%d%H%M')
     back_zipfile=CDE_ROOT_DIR + '/' + mname + '-' + oldv + '-bck-' + bcktime + '.zip'
+    FNULL = open(os.devnull, 'w')
     try:
-        subprocess.call(['zip', '-r', back_zipfile, module_root_dir])
-    except:
+        subprocess.call(['zip', '-r', back_zipfile, module_root_dir], stdout=FNULL, stderr=subprocess.STDOUT)
+    except Exception as e:
         click.echo('Module backup compression failed, exiting.')
-        click.ClickException(sys.exc_info[0])
+        click.echo('Error was:'+ str(e))
         sys.exit(1)
 
 def module_ex_dir():    
@@ -71,10 +72,11 @@ def search_process(exepath):
      If not found, returns CDE_EMPTY_PID
     """
     for p in psutil.process_iter(attrs=["cmdline"]):
-        if p.cmdline()[0] == exepath:
-            return p.pid
+        if len(p.cmdline()) > 0:
+            if p.cmdline()[0] == exepath:
+                return p.pid
         #This check is needed if a scripts starts with a shebang line!
-        if len(p.cmdline()) == 2 and p.cmdline()[1] == exepath:
+        if len(p.cmdline()) > 1 and p.cmdline()[1] == exepath:
             return p.pid
             
     return CDE_EMPTY_PID
@@ -89,7 +91,7 @@ def kill_process(pid):
     for i in range(10):
         os.kill(pid, signal.SIGTERM)
         time.sleep(1)
-        if not psutil.pid_exists(pid)
+        if not psutil.pid_exists(pid):
             return
     #forcefully KILL
     os.kill(pid, signal.SIGKILL)
@@ -113,7 +115,7 @@ def status_of_daemon(mname, pname):
         if pid == s_pid:
             if pid == CDE_EMPTY_PID:
                 return __DAEMON_NOT_RUNNING, CDE_EMPTY_PID
-            else
+            else:
                 return __DAEMON_RUNNING, s_pid           
         
         if pid == CDE_EMPTY_PID and s_pid > 0:
@@ -145,16 +147,17 @@ def install(ctx, zfile):
     #Unpacks the module under the temp extraction dir 
     click.echo('Extracting module from file ' + zfile)
     shutil.rmtree(__TEMP_EXTRACTION_DIR, ignore_errors=True)
+    
+    FNULL = open(os.devnull, 'w')
     try:
-        subprocess.call(['unzip', zfile, '-d', __TEMP_EXTRACTION_DIR])
-    except:
+        subprocess.call(['unzip', zfile, '-d', __TEMP_EXTRACTION_DIR], stdout=FNULL, stderr=subprocess.STDOUT)
+    except Exception as e:
         click.echo('Module package extraction failed, exiting.')
-        click.ClickException(sys.exc_info[0])
-        sys.exit(1)
+        click.echo('Error was:'+str(e))
 
     # Assigns all extracted tree to the cde user recursively
-    cdeuid = getpwnam('cde')[2]
-    cdegid = getgrnam('cde')[2]
+    cdeuid = pwd.getpwnam('cde')[2]
+    cdegid = grp.getgrnam('cde')[2]
     os.chown(__TEMP_EXTRACTION_DIR, cdeuid, cdegid)
     for rdir, dirs, files in os.walk(__TEMP_EXTRACTION_DIR):  
         for m in dirs:
@@ -168,9 +171,9 @@ def install(ctx, zfile):
         moduleinfo = __CDE_REGISTRY.read_moduleinfo(moduleexdir + '/module.info')
         mname = moduleinfo[0]
         infodata = moduleinfo[1]
-    except:
+    except Exception as e:
         click.echo('Failed parsing the module.info file, exiting.')
-        click.ClickException(sys.exc_info[0])
+        click.echo('Error was:'+str(e))
         #Cleans up the extraction dir 
         shutil.rmtree(__TEMP_EXTRACTION_DIR, ignore_errors=True)        
         sys.exit(1) 
@@ -197,7 +200,7 @@ def install(ctx, zfile):
         oldv = __CDE_REGISTRY.mod_version(mname)
         if click.confirm('Previous version '+ oldv +' is present. Upgrade?'):
             toreplace = True
-            if not click.confirm('Backup the old version?'):
+            if not click.confirm('Backup the old version?', default = True):
                 no_backup = True                            
         else:
             toinstall = False
@@ -210,7 +213,7 @@ def install(ctx, zfile):
     if toinstall:
         if toreplace:        
             #uninstalls the previous version
-            ctx.invoke(uninstall, nobackup=no_backup, module=mname)
+            ctx.invoke(uninstall, backup=not(no_backup), module=mname)
         
         #Now ready to install
         click.echo('Installing module ' + mname + '.' + infodata['version'])
@@ -235,25 +238,28 @@ def install(ctx, zfile):
     
     
 @cli.command()
-@click.option('--nobackup', default=False)
+@click.option('--backup/--nobackup', default=True)
 @click.argument('module')
-def uninstall(module):
+def uninstall(backup, module):
     """Uninstalls a CDE module"""
-    
+        
     #Check if installed
     if __CDE_REGISTRY.mod_version(module) == None:
         click.echo('Module '+ module + ' is not installed. Nothing to do.')
         sys.exit(1)
     
+    if not click.confirm('Please confirm uninstallation of module '+ module):
+        sys.exit(0)    
+    
     #Check depenencies are not broken
     if len(__CDE_REGISTRY.dependents(module)) > 0:
         click.echo('Module cannot be uninstalled because it would break existing module dependecies.')
     else:
-        backup = True
-        if nobackup:
+        do_backup = True
+        if not backup:
             if click.confirm('Please confirm that module backup is NOT requested:'):
-                backup = False
-        if backup:
+                do_backup = False
+        if do_backup:
             #Executes the backup
             click.echo('Backing up the module '+ module +' before uninstallation.')
             backup_module_dir(module)
@@ -265,7 +271,7 @@ def uninstall(module):
             subprocess.call(module_root_dir + '/scpt/post_uninst.py')
 
         #Remove the module info in the registry 
-        __CDE_REGISTRY.remove_infodata(mname)
+        __CDE_REGISTRY.remove_infodata(module)
         
         # Finally the module directory is removed        
         try:
@@ -285,10 +291,17 @@ def listmod():
     for mname in __CDE_REGISTRY.get_modules():
         vers = __CDE_REGISTRY.mod_version(mname)
         click.echo(mname + '-' + vers)
-        for mod, pname, pexec in __CDE_REGISTRY.get_program_list(mname):
-            click.echo('    '+ mod +'.'+ pname)
-        for mod, dname, dexec in __CDE_REGISTRY.get_daemon_list(mname):
-            click.echo('    '+ mod +'.'+ dname + ' (D)')
+        for mod, pname, pexec, is_daemon, pid in __CDE_REGISTRY.get_program_list(mname):
+            if is_daemon:
+                ds = ' (D) '
+                if pid == CDE_EMPTY_PID:
+                    ps = 'None'
+                else:
+                    ps = str(pid)
+            else:
+                ds = '     '
+                ps = 'n/a'
+            click.echo('    '+ mod +'.'+ pname + ds + 'PID:'+ ps)
                 
 
 @cli.command(context_settings=dict(
@@ -315,7 +328,8 @@ def start(ctx, execname):
         click.echo('Wrong module or executable name: '+ execname)
         sys.exit(1)
         
-    callist = [exepath].extend(ctx.args)
+    callist = [exepath]
+    callist[1:] = ctx.args
     try:
         if is_daemon:
             pid = subprocess.Popen(callist).pid
@@ -329,10 +343,18 @@ def start(ctx, execname):
     
     
 @cli.command()
-@click.option('--all', default=False)
-@click.argument('daemon', metavar='<daemon>')
-def dstatus(daemon):
-    """Returns the status of a daemon"""
+@click.argument('daemon', metavar='<daemon>', required=False)
+@click.pass_context
+def dstatus(ctx, daemon):
+    """Returns the status of daemon(s)"""
+    
+    if daemon == None:
+        #List the status of all daemons recursively
+        for mod, pname, pexec, is_daemon, pid in __CDE_REGISTRY.get_program_list():
+            daemon_name = mod + '.' + pname
+            if is_daemon:
+                ctx.invoke(dstatus, daemon=daemon_name)
+        sys.exit(0)
     
     #Daemon spec must have the form: module.program_name or module.daemon_name
     modex = daemon.split('.')
@@ -349,26 +371,26 @@ def dstatus(daemon):
         sys.exit(1)
         
     if daemon_status == __DAEMON_NOT_RUNNING:
-        click.echo('Daemon '+ daemon +' not running')        
+        click.echo('Daemon '+ daemon +' not running.')        
     
     if daemon_status == __DAEMON_RUNNING:
-        click.echo('Daemon '+ daemon +' running')        
+        click.echo('Daemon '+ daemon +' running, PID:' + str(pid))        
     
     if daemon_status == __DAEMON_RUNNING_NOT_REG:
-        click.echo('Daemon '+ daemon +' running but PID not registered (started externally).')
-        if click.confirm('Align registry?'):
+        click.echo('Daemon '+ daemon +' running but PID not registered (started externally):'+ str(pid))
+        if click.confirm('Align registry?', default=True):
             __CDE_REGISTRY.store_pid(mname, pname, pid)            
     
     if daemon_status == __DAEMON_EXITED_NOT_REG:
         click.echo('Daemon '+ daemon +' exited but PID still registered (stopped externally).')
-        if click.confirm('Align registry?'):
+        if click.confirm('Align registry?', default=True):
             __CDE_REGISTRY.erase_pid(mname, pname)
     
     if daemon_status == __DAEMON_RESTARTED_NOT_REG:
-        click.echo('Daemon '+ daemon +' running but different PID registered (restarted externally).')
-        if click.confirm('Align registry?'):
+        click.echo('Daemon '+ daemon +' running but different PID registered (restarted externally):'+ str(pid))
+        if click.confirm('Align registry?', default=True):
             __CDE_REGISTRY.store_pid(mname, pname, pid)
-        
+
     
 @cli.command()
 @click.argument('daemon', metavar='<daemon>')

@@ -8,7 +8,7 @@ management of the CDE modules through the common cde-cli management framework.
 THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS AS IS AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. 
 IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE.
 """
-import os, sys, pwd, grp, stat, subprocess, shutil
+import os, sys, pwd, grp, stat, subprocess, shutil, datetime
 import zipfile
 import click
 
@@ -32,12 +32,12 @@ __CDE_CLI_SCPT_DIR = __CDE_CLI_DIR + '/scpt'
  located in the CDE Root directory with this naming convention
  cde-<version>-<yyyymmddhhmm>.zip
 """
-def backup_cde_dir():    
-    oldv = __CDE_REGISTRY.mod_version('cde_cli')
+def backup_cde_dir(oldv):    
     bcktime = format(datetime.datetime.now(), '%Y%m%d%H%M')
     back_zipfile='/opt/cde-' + oldv + '-bck-' + bcktime + '.zip'
+    FNULL = open(os.devnull, 'w')
     try:
-        subprocess.call(['zip', '-r', back_zipfile, __CDE_ROOT_DIR])
+        subprocess.call(['zip', '-r', back_zipfile, __CDE_ROOT_DIR], stdout=FNULL, stderr=subprocess.STDOUT)
     except:
         click.echo('CDE directory tree backup compression failed, exiting.')
         click.ClickException(sys.exc_info[0])
@@ -83,8 +83,9 @@ def install(zfile):
     # Installs the cde-cli as a CDE module from the .zip file
     # The package .zip file must be in the same dir of this script
     click.echo('Installing the CDE environment.')
+    FNULL = open(os.devnull, 'w')
     try:
-        subprocess.call(['unzip', zfile, '-d', __CDE_ROOT_DIR])
+        subprocess.call(['unzip', zfile, '-d', __CDE_ROOT_DIR], stdout=FNULL, stderr=subprocess.STDOUT)
     except:
         click.echo('cde-cli package extraction failed, exiting.')
         click.ClickException(sys.exc_info[0])
@@ -129,7 +130,8 @@ def drop():
             if os.path.isfile(module_root_dir + '/scpt/post_uninst.py'):                
                 subprocess.call(module_root_dir + '/scpt/post_uninst.py')        
         #Makes the CDE dir backup
-        backup_cde_dir()
+        oldv = reg.mod_version('cde_cli')
+        backup_cde_dir(oldv)
         #Finally removes the CDE dir tree
         try:
             shutil.rmtree(__CDE_ROOT_DIR)
