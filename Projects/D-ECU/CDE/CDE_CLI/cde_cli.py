@@ -96,7 +96,7 @@ def kill_process(pid):
     #forcefully KILL
     os.kill(pid, signal.SIGKILL)
     #give some time more...
-    time_sleep(1)
+    time.sleep(1)
     
 
 def status_of_daemon(mname, pname):
@@ -154,16 +154,6 @@ def install(ctx, zfile):
     except Exception as e:
         click.echo('Module package extraction failed, exiting.')
         click.echo('Error was:'+str(e))
-
-    # Assigns all extracted tree to the cde user recursively
-    cdeuid = pwd.getpwnam('cde')[2]
-    cdegid = grp.getgrnam('cde')[2]
-    os.chown(__TEMP_EXTRACTION_DIR, cdeuid, cdegid)
-    for rdir, dirs, files in os.walk(__TEMP_EXTRACTION_DIR):  
-        for m in dirs:
-            os.chown(os.path.join(rdir, m), cdeuid, cdegid)
-        for m in files:
-            os.chown(os.path.join(rdir, m), cdeuid, cdegid)
     
     #Builds the representation of the module.info
     moduleexdir = module_ex_dir()
@@ -247,6 +237,10 @@ def uninstall(backup, module):
     if __CDE_REGISTRY.mod_version(module) == None:
         click.echo('Module '+ module + ' is not installed. Nothing to do.')
         sys.exit(1)
+    
+    if module == 'cde_cli':
+        click.echo('The cde_cli module must be dropped by the cde_cli_base script. Exiting.')
+        sys.exit(0)
     
     if not click.confirm('Please confirm uninstallation of module '+ module):
         sys.exit(0)    

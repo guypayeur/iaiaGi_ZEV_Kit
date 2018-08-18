@@ -2,7 +2,7 @@
 
 # cde_cli package build script
 
-VERSION_STRING="0.1-dev"
+VERSION_STRING="0.1-alfa"
 PACKAGE_BASE_NAME="cde_cli"
 
 # Take the start location as the Collector root source dir

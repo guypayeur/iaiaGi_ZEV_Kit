@@ -78,7 +78,7 @@ def install(zfile):
         #TODO: Check the groups applicable on the RPi
     
     # chmod 750 of CDE Root
-    os.chmod(__CDE_ROOT_DIR, stat.S_IRWXU | stat.S_IRGRP | stat.S_IXGRP)
+    os.chmod(__CDE_ROOT_DIR, stat.S_IRWXU | stat.S_IRGRP | stat.S_IXGRP )
         
     # Installs the cde-cli as a CDE module from the .zip file
     # The package .zip file must be in the same dir of this script
