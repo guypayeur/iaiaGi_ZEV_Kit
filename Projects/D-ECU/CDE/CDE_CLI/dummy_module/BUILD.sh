@@ -41,6 +41,7 @@ cp $SOURCE_DIR/dummyd.py .
 # Copy the script files
 cd ../scpt
 cp $SOURCE_DIR/post_inst.py .
+cp $SOURCE_DIR/post_upg.py .
 cp $SOURCE_DIR/post_uninst.py .
 
 # Copy the base doc

@@ -127,6 +127,8 @@ def status_of_daemon(mname, pname):
         
         if pid > 0 and s_pid != pid:
             return __DAEMON_RESTARTED_NOT_REG, s_pid
+    else:
+        return (None, -1)
     
     
 def extract_from_zipfile(zfile):
@@ -137,9 +139,8 @@ def extract_from_zipfile(zfile):
      If successful, returns a tuple with 3 elements
      - the moduleinfo object obtained by parsing the module.info file
      - the extracted module name
-     - the infodata object of the extracted module
-     
-    """    
+     - the infodata object of the extracted module     
+    """
     #Unpacks the module under the temp extraction dir 
     click.echo('Extracting module from file ' + zfile)
     shutil.rmtree(__TEMP_EXTRACTION_DIR, ignore_errors=True)
@@ -173,7 +174,7 @@ def replace_spec_module_dir(mname, moduleexdir, target_dir):
      This function replaces an individual directory inside a module
      from the directory where the new module has been extracted.
      Used for upgrades.     
-    """    
+    """
     module_root_dir = os.path.join(CDE_ROOT_DIR, mname)        
     tgdir = os.path.join(module_root_dir, target_dir)
     if os.path.exists(tgdir):
@@ -223,7 +224,7 @@ def cli(ctx):
         
 @cli.command()
 @click.argument('zfile', type=click.Path(exists=True), metavar='<zfile>')
-def install(ctx, zfile):
+def install(zfile):
     """Installs a cde module from its package .zip file"""        
         
     (moduleinfo, mname, infodata) = extract_from_zipfile(zfile)
@@ -247,7 +248,7 @@ def install(ctx, zfile):
     if res == -1:
         #Older version is installed, it has to be upgraded by 'upgrade'
         oldv = __CDE_REGISTRY.mod_version(mname)
-        click.echo('Previous version '+ oldv +' is present. Please use the \'upgrade\' command instead.'):
+        click.echo('Previous version '+ oldv +' is present. Please use the \'upgrade\' command instead.')
         toinstall = False
 
     #Module dependencies check
@@ -260,6 +261,7 @@ def install(ctx, zfile):
         click.echo('Installing module ' + mname + ' version ' + infodata['version'])
         
         #Move the temporary extraction dir into the CDE directory tree
+        moduleexdir = module_ex_dir()
         shutil.move(moduleexdir, CDE_ROOT_DIR)
         
         # Store the module info in the registry 
@@ -348,7 +350,7 @@ def upgrade(zfile):
                 item_path = os.path.join(module_root_dir, item)
                 if os.path.isdir(item_path):
                     shutil.rmtree(item_path)
-                else
+                else:
                     os.remove(item_path)
                         
         # Store the module info in the registry 
@@ -493,15 +495,15 @@ def dstatus(ctx, daemon):
     #Daemon spec must have the form: module.program_name or module.daemon_name
     modex = daemon.split('.')
     if len(modex) != 2:
-        click.echo('Error specifying daemon: format is ''module.daemonname''')
+        click.echo('Error specifying daemon: format is ''module.daemon_name''')
         sys.exit(1)
 
     mname = modex[0]
     pname = modex[1]
 
-    daemon_status, pid = status_of_daemon(mname, pname)
+    (daemon_status, pid) = status_of_daemon(mname, pname)
     if daemon_status == None:
-        click.echo('Wrong module or executable name: '+ execname)
+        click.echo('Wrong module or executable name: '+ daemon)
         sys.exit(1)
         
     if daemon_status == __DAEMON_NOT_RUNNING:
