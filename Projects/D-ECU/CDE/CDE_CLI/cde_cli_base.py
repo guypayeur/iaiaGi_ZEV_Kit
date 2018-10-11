@@ -34,7 +34,7 @@ __CDE_CLI_SCPT_DIR = __CDE_CLI_DIR + '/scpt'
 """
 def backup_cde_dir(oldv):    
     bcktime = format(datetime.datetime.now(), '%Y%m%d%H%M')
-    back_zipfile='/opt/cde-' + oldv + '-bck-' + bcktime + '.zip'
+    back_zipfile='/opt/cde-root-' + oldv + '-bck-' + bcktime + '.zip'
     FNULL = open(os.devnull, 'w')
     try:
         subprocess.call(['zip', '-r', back_zipfile, __CDE_ROOT_DIR], stdout=FNULL, stderr=subprocess.STDOUT)
@@ -82,7 +82,7 @@ def install(zfile):
         
     # Installs the cde-cli as a CDE module from the .zip file
     # The package .zip file must be in the same dir of this script
-    click.echo('Installing the CDE environment.')
+    click.echo('Installing the CDE Root environment.')
     FNULL = open(os.devnull, 'w')
     try:
         subprocess.call(['unzip', zfile, '-d', __CDE_ROOT_DIR], stdout=FNULL, stderr=subprocess.STDOUT)
@@ -95,7 +95,7 @@ def install(zfile):
     sys.path.insert(0, __CDE_CLI_BIN_DIR)
     from cde_cli_registry import CDE_CLI_Registry
     reg = CDE_CLI_Registry()
-    moduleinfo = reg.read_moduleinfo(__CDE_CLI_DIR + '/module.info')
+    moduleinfo = reg.read_moduleinfo(os.path.join(__CDE_CLI_DIR, 'module.info'))
     reg.store_infodata(moduleinfo[0], moduleinfo[1])
         
     # Assigns all the CDE Root dir to the cde user recursively
@@ -110,9 +110,9 @@ def install(zfile):
     
     # Executes the post installation tasks of cde_cli
     click.echo('Executing post-installation tasks')
-    subprocess.call(__CDE_CLI_SCPT_DIR+'/post_inst.py')    
+    subprocess.call(os.path.join(__CDE_CLI_SCPT_DIR,'post_inst.py'))
     
-    click.echo('CDE environment ready. Type cde_cli sto start the CLI.')
+    click.echo('CDE environment ready. Type cde_cli to start the CLI.')
 
 
 @click.command()
@@ -126,9 +126,10 @@ def drop():
         from cde_cli_registry import CDE_CLI_Registry
         reg = CDE_CLI_Registry()
         for mname in reg.get_modules():            
-            module_root_dir = __CDE_ROOT_DIR + '/' + mname
-            if os.path.isfile(module_root_dir + '/scpt/post_uninst.py'):                
-                subprocess.call(module_root_dir + '/scpt/post_uninst.py')        
+            module_root_dir = os.path.join(__CDE_ROOT_DIR, mname)
+            pupath = os.path.join(module_root_dir, 'scpt', 'post_uninst.py')
+            if os.path.exists(pupath):                
+                subprocess.call(pupath)        
         #Makes the CDE dir backup
         oldv = reg.mod_version('cde_cli')
         backup_cde_dir(oldv)

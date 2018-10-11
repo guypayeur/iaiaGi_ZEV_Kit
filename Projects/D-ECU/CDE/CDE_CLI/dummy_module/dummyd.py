@@ -19,7 +19,10 @@ except:
     pass
 
 #increment step
-step = int(sys.argv[1])
+try:
+    step = int(sys.argv[1])
+except:
+    step = 1
 
 i = 0
 while True:

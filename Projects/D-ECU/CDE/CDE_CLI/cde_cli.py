@@ -18,7 +18,7 @@ import psutil
 
 from cde_cli_registry import CDE_CLI_Registry, CDE_ROOT_DIR, CDE_EMPTY_PID
 
-__version__    =  "0.1"
+__version__    =  "0.2"
 __author__     =  "Alberto Trentadue"
 __copyright__  =  "Copyright 2018, iaiaGi Project"
 __credits__    =  []
@@ -44,10 +44,11 @@ def backup_module_dir(mname):
     <module_name>-<version>-<yyyymmddhhmm>.zip
     """
 
-    module_root_dir = CDE_ROOT_DIR + '/' + mname
+    module_root_dir = os.path.join(CDE_ROOT_DIR, mname)
     oldv = __CDE_REGISTRY.mod_version(mname)
     bcktime = format(datetime.datetime.now(), '%Y%m%d%H%M')
-    back_zipfile=CDE_ROOT_DIR + '/' + mname + '-' + oldv + '-bck-' + bcktime + '.zip'
+    zipfile_name = mname + '-' + oldv + '-bck-' + bcktime + '.zip'
+    back_zipfile=os.path.join(CDE_ROOT_DIR, zipfile_name)
     FNULL = open(os.devnull, 'w')
     try:
         subprocess.call(['zip', '-r', back_zipfile, module_root_dir], stdout=FNULL, stderr=subprocess.STDOUT)
@@ -127,23 +128,18 @@ def status_of_daemon(mname, pname):
         if pid > 0 and s_pid != pid:
             return __DAEMON_RESTARTED_NOT_REG, s_pid
     
-
-@click.group(invoke_without_command=True)
-@click.pass_context
-def cli(ctx):
+    
+def extract_from_zipfile(zfile):
     """
-    The Click Command group definition
-    """
-    if ctx.invoked_subcommand is None:
-        repl(ctx, prompt_kwargs={'message':u'-->> '})
-
-        
-@cli.command()
-@click.argument('zfile', type=click.Path(exists=True), metavar='<zfile>')
-@click.pass_context
-def install(ctx, zfile):
-    """Installs a cde module from its package .zip file"""
-        
+     Extracts the content of a package file into a temp directory
+     and reads the package module information contained in it
+     
+     If successful, returns a tuple with 3 elements
+     - the moduleinfo object obtained by parsing the module.info file
+     - the extracted module name
+     - the infodata object of the extracted module
+     
+    """    
     #Unpacks the module under the temp extraction dir 
     click.echo('Extracting module from file ' + zfile)
     shutil.rmtree(__TEMP_EXTRACTION_DIR, ignore_errors=True)
@@ -158,19 +154,82 @@ def install(ctx, zfile):
     #Builds the representation of the module.info
     moduleexdir = module_ex_dir()
     try:
-        moduleinfo = __CDE_REGISTRY.read_moduleinfo(moduleexdir + '/module.info')
+        moduleinfo = __CDE_REGISTRY.read_moduleinfo(os.path.join(moduleexdir, 'module.info'))
         mname = moduleinfo[0]
         infodata = moduleinfo[1]
+        
+        return (moduleinfo, mname, infodata)
+    
     except Exception as e:
         click.echo('Failed parsing the module.info file, exiting.')
         click.echo('Error was:'+str(e))
         #Cleans up the extraction dir 
         shutil.rmtree(__TEMP_EXTRACTION_DIR, ignore_errors=True)        
         sys.exit(1) 
+    
+
+def replace_spec_module_dir(mname, moduleexdir, target_dir):
+    """
+     This function replaces an individual directory inside a module
+     from the directory where the new module has been extracted.
+     Used for upgrades.     
+    """    
+    module_root_dir = os.path.join(CDE_ROOT_DIR, mname)        
+    tgdir = os.path.join(module_root_dir, target_dir)
+    if os.path.exists(tgdir):
+        shutil.rmtree(tgdir)
+    crdir = os.path.join(moduleexdir, target_dir)    
+    shutil.copytree(crdir, tgdir)
+    
+
+def update_files_module_dir(mname, moduleexdir, target_dir, new_ver):
+    """
+     This function moves the new files from an upgrade package into the
+     target directory and names them with the suffix: .<new_version>.NEW
+     Also cleans up all pre existing .NEW files
+     If the target module dir has been removed in the new package file
+     it will be removed also in the current installation.
+     Used for upgrades.     
+    """
+    module_root_dir = os.path.join(CDE_ROOT_DIR, mname)        
+    #Removes pre-existing .NEW files
+    tgdir = os.path.join(module_root_dir, target_dir)
+    all_files = os.listdir(tgdir)
+    for item in all_files:
+        if item.endswith(".NEW"):
+            os.remove(os.path.join(tgdir, item))
+    #Copies the extracted files to the target and appends to them .new_version.NEW
+    crdir = os.path.join(moduleexdir, target_dir)
+    if os.path.isdir(crdir):
+        all_files = os.listdir(crdir)
+        for item in all_files:
+            orig_file_path = os.path.join(crdir, item)
+            new_file_name = item + '.' + new_ver + '.NEW'
+            dest_file_path = os.path.join(module_root_dir, target_dir, new_file_name)
+            shutil.copyfile(orig_file_path, dest_file_path)
+    else:
+        shutil.rmtree(tgdir)
+        
+
+@click.group(invoke_without_command=True)
+@click.pass_context
+def cli(ctx):
+    """
+    The Click Command group definition
+    """
+    if ctx.invoked_subcommand is None:
+        repl(ctx, prompt_kwargs={'message':u'-->> '})
+
+        
+@cli.command()
+@click.argument('zfile', type=click.Path(exists=True), metavar='<zfile>')
+def install(ctx, zfile):
+    """Installs a cde module from its package .zip file"""        
+        
+    (moduleinfo, mname, infodata) = extract_from_zipfile(zfile)
             
     #Module files are now extracted and ready to be installed    
-    #Check if there is already this module installed.
-    toreplace = False
+    #Check if there is already this module installed.    
     no_backup = False
     toinstall = True
     res = __CDE_REGISTRY.precheck_modinfo(mname, infodata)
@@ -186,47 +245,127 @@ def install(ctx, zfile):
         toinstall = False
 
     if res == -1:
-        #Older version is installed, ask confirmation to upgrade
+        #Older version is installed, it has to be upgraded by 'upgrade'
         oldv = __CDE_REGISTRY.mod_version(mname)
-        if click.confirm('Previous version '+ oldv +' is present. Upgrade?'):
-            toreplace = True
-            if not click.confirm('Backup the old version?', default = True):
-                no_backup = True                            
-        else:
-            toinstall = False
+        click.echo('Previous version '+ oldv +' is present. Please use the \'upgrade\' command instead.'):
+        toinstall = False
 
     #Module dependencies check
     if not __CDE_REGISTRY.check_dependencies(infodata):
         click.echo('Dependencies are not satisfied, installation cancelled.')
         toinstall = False
     
-    if toinstall:
-        if toreplace:        
-            #uninstalls the previous version
-            ctx.invoke(uninstall, backup=not(no_backup), module=mname)
-        
+    if toinstall:        
         #Now ready to install
-        click.echo('Installing module ' + mname + '.' + infodata['version'])
+        click.echo('Installing module ' + mname + ' version ' + infodata['version'])
         
-        #Move the temporary extraction  dirinto the CDE directory tree
+        #Move the temporary extraction dir into the CDE directory tree
         shutil.move(moduleexdir, CDE_ROOT_DIR)
         
         # Store the module info in the registry 
         __CDE_REGISTRY.store_infodata(mname, infodata)
             
-        module_root_dir = CDE_ROOT_DIR + '/' + mname
+        module_root_dir = os.path.join(CDE_ROOT_DIR, mname)
                 
         # Executes the post installation tasks if any
-        if os.path.isfile(module_root_dir + '/scpt/post_inst.py'):
+        inst_task_path = os.path.join(module_root_dir, 'scpt', 'post_inst.py')
+        if os.path.isfile(inst_task_path):
             click.echo('Executing post-installation tasks')
-            subprocess.call(module_root_dir + '/scpt/post_inst.py')             
+            subprocess.call(inst_task_path)             
 
         click.echo('Installation completed.')
     
     #Cleans up the extraction dir 
     shutil.rmtree(__TEMP_EXTRACTION_DIR, ignore_errors=True)
     
+
+@cli.command()
+@click.argument('zfile', type=click.Path(exists=True), metavar='<zfile>')
+def upgrade(zfile):
+    """Upgrades a cde module from the new package .zip file"""
     
+    (moduleinfo, mname, infodata) = extract_from_zipfile(zfile)
+    #Module files are now extracted and ready to be installed    
+    #Check if there is already this module installed.        
+    toupgrade = True
+
+    res = __CDE_REGISTRY.precheck_modinfo(mname, infodata)
+    #Check possible cases 
+    if res == None:
+        #The package is NOT present!
+        click.echo('Module is not installed. Please use the \'install\' command to install it.')
+        toupgrade = False
+        
+    if res == 0:
+        #Same version installed, nothing to do
+        click.echo('Module version is already installed. Nothing to do.')
+        toupgrade = False
+    
+    if res == 1:
+        #Newer version is installed, installation not allowed
+        click.echo('Module is already installed with newer version. Nothing to do.')
+        toupgrade = False
+
+    #Module dependencies check
+    if not __CDE_REGISTRY.check_dependencies(infodata):
+        click.echo('Dependencies are not satisfied, installation cancelled.')
+        toupgrade = False
+        
+    if toupgrade:
+        #Executes the previous version's backup
+        new_ver = infodata['version']
+        click.echo('Backing up the module '+ mname +' before upgrade.')
+        backup_module_dir(mname)
+                
+        #Now ready to upgrade!
+        click.echo('Upgrading module '+ mname +' to version ' + new_ver)
+        module_root_dir = os.path.join(CDE_ROOT_DIR, mname)
+        moduleexdir = module_ex_dir()
+        #Copies or replaces the dirs from the new package
+        dir_items = os.listdir(moduleexdir)
+        for item in dir_items:
+            item_path = os.path.join(moduleexdir, item)
+            #if it is a file, it is simply copied in the target dir
+            if os.path.isfile(item_path):
+                shutil.copy(item_path, module_root_dir)
+            else:
+                #is a directory                
+                if item in ['bin', 'lib', 'doc', 'scpt', 'src']:
+                    #old items can be ovewritten
+                    replace_spec_module_dir(mname, moduleexdir, item)                
+                else:
+                    #old items shall be kept
+                    if os.path.exists(os.path.join(module_root_dir, item)):
+                        update_files_module_dir(mname, moduleexdir, item, new_ver)
+                    else:
+                        replace_spec_module_dir(mname, moduleexdir, item)
+                    
+        #Removes the dirs in the installation that are not present in the new package
+        dir_items = os.listdir(module_root_dir)
+        for item in dir_items:
+            pkg_item_path = os.path.join(moduleexdir, item)
+            if not os.path.exists(pkg_item_path):
+                item_path = os.path.join(module_root_dir, item)
+                if os.path.isdir(item_path):
+                    shutil.rmtree(item_path)
+                else
+                    os.remove(item_path)
+                        
+        # Store the module info in the registry 
+        __CDE_REGISTRY.store_infodata(mname, infodata)        
+                
+        # Executes the post upgrade tasks if any                        
+        upg_task_path = os.path.join(module_root_dir,'scpt','post_upg.py')
+        if os.path.isfile(upg_task_path):
+            click.echo('Executing post-upgrade tasks')
+            subprocess.call(upg_task_path)             
+
+        click.echo('Upgrade completed.')
+
+    #Cleans up the extraction dir 
+    shutil.rmtree(__TEMP_EXTRACTION_DIR, ignore_errors=True)
+    
+
 @cli.command()
 @click.option('--backup/--nobackup', default=True)
 @click.argument('module')
@@ -237,7 +376,7 @@ def uninstall(backup, module):
     if __CDE_REGISTRY.mod_version(module) == None:
         click.echo('Module '+ module + ' is not installed. Nothing to do.')
         sys.exit(1)
-    
+
     if module == 'cde_cli':
         click.echo('The cde_cli module must be dropped by the cde_cli_base script. Exiting.')
         sys.exit(0)
@@ -258,11 +397,12 @@ def uninstall(backup, module):
             click.echo('Backing up the module '+ module +' before uninstallation.')
             backup_module_dir(module)
 
-        module_root_dir = CDE_ROOT_DIR + '/' + module        
+        module_root_dir = os.path.join(CDE_ROOT_DIR, module)
         # Executes the post uninstallation tasks if any
-        if os.path.isfile(module_root_dir + '/scpt/post_uninst.py'):
+        uninst_task_path = os.path.join(module_root_dir, 'scpt', 'post_uninst.py')
+        if os.path.isfile(uninst_task_path):
             click.echo('Executing post-uninstallation tasks')
-            subprocess.call(module_root_dir + '/scpt/post_uninst.py')
+            subprocess.call(uninst_task_path)
 
         #Remove the module info in the registry 
         __CDE_REGISTRY.remove_infodata(module)
